@@ -14,6 +14,13 @@ import type { ApiResponse, LayerData, VisualizationData } from "~/lib/types";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+// Example clips served from /public so visitors can try the site without uploading.
+const SAMPLE_AUDIO = [
+  { file: "chirpingbirds.wav", label: "Chirping birds", emoji: "🐦" },
+  { file: "crackling_fire.wav", label: "Crackling fire", emoji: "🔥" },
+  { file: "laughing.wav", label: "Laughing", emoji: "😂" },
+] as const;
+
 const ESC50_EMOJI_MAP: Record<string, string> = {
   dog: "🐕",
   rain: "🌧️",
@@ -98,6 +105,8 @@ export default function HomePage() {
   const [vizData, setVizData] = useState<ApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeSample, setActiveSample] = useState<string | null>(null);
+  const [loadingSample, setLoadingSample] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Revoke the previous object URL whenever a new file is chosen or on unmount.
@@ -120,8 +129,36 @@ export default function HomePage() {
       return;
     }
 
+    setActiveSample(null);
     setFile(selected);
     setAudioUrl(URL.createObjectURL(selected));
+  };
+
+  const handleSampleSelect = async (sampleFile: string) => {
+    setError(null);
+    setVizData(null);
+    setLoadingSample(sampleFile);
+
+    try {
+      const response = await fetch(`/${sampleFile}`);
+      if (!response.ok) {
+        throw new Error(`Could not load the sample (${response.status}).`);
+      }
+      const blob = await response.blob();
+      const sample = new File([blob], sampleFile, {
+        type: blob.type || "audio/wav",
+      });
+
+      setActiveSample(sampleFile);
+      setFile(sample);
+      setAudioUrl(URL.createObjectURL(sample));
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not load the sample.",
+      );
+    } finally {
+      setLoadingSample(null);
+    }
   };
 
   const handleAnalyze = async () => {
@@ -204,6 +241,33 @@ export default function HomePage() {
                 )}
                 {isLoading ? "Analyzing..." : "Analyze"}
               </Button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
+              <span className="mr-1 text-sm text-stone-500">
+                Or try a sample:
+              </span>
+              {SAMPLE_AUDIO.map((sample) => {
+                const isActive = activeSample === sample.file;
+                const isFetching = loadingSample === sample.file;
+                return (
+                  <button
+                    key={sample.file}
+                    type="button"
+                    onClick={() => handleSampleSelect(sample.file)}
+                    disabled={isLoading || loadingSample !== null}
+                    aria-pressed={isActive}
+                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isActive
+                        ? "border-stone-900 bg-stone-900 text-white"
+                        : "border-stone-300 bg-white text-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    <span>{sample.emoji}</span>
+                    {isFetching ? "Loading..." : sample.label}
+                  </button>
+                );
+              })}
             </div>
 
             {audioUrl ? (
